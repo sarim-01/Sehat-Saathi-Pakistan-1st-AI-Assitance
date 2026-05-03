@@ -25,8 +25,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 AGENTS_DIR = BASE_DIR / "agents"
 
-MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash-lite-preview-06-17"
-
+MODEL = os.environ.get("GEMINI_MODEL", "").strip() or "gemini-2.5-flash"
 _GEMINI_429_MAX_ATTEMPTS = max(1, int(os.environ.get("GEMINI_429_MAX_ATTEMPTS", "4")))
 
 _SYSTEM_PROMPT_PATTERN = re.compile(
@@ -131,11 +130,30 @@ def _retry_after_seconds(err: ClientError) -> float | None:
     return None
 
 
+def _normalize_gemini_api_key(raw: str) -> str:
+    """
+    Return a single-line API key. Secret Manager / .env mistakes sometimes inject the
+    whole .env file into GEMINI_API_KEY, which breaks HTTP headers (illegal newline).
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if "\n" in text or "\r" in text:
+        for line in text.replace("\r\n", "\n").split("\n"):
+            line = line.strip()
+            if line.startswith("GEMINI_API_KEY="):
+                return line.split("=", 1)[1].strip()
+        return text.splitlines()[0].strip()
+    if text.startswith("GEMINI_API_KEY="):
+        return text.split("=", 1)[1].strip()
+    return text
+
+
 def call_agent(system_prompt: str, user_input: str) -> dict[str, Any]:
     """
     Call Gemini with the given system prompt and user text; return parsed JSON object.
     """
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = _normalize_gemini_api_key(os.environ.get("GEMINI_API_KEY", ""))
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY is not set (check your .env or environment).")
 
